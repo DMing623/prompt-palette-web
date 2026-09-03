@@ -10,7 +10,7 @@
         </div>
         <div class="tags-toolbar-btns">
           <button v-if="isAdmin" class="btn btn-sm btn-ghost" @click="addTag">＋ 新增</button>
-          <button class="btn btn-sm btn-ghost" @click="triggerImportCSV">📥 导入 CSV</button>
+          <button v-if="isAdmin" class="btn btn-sm btn-ghost" @click="triggerImportCSV">📥 导入 CSV</button>
           <button class="btn btn-sm btn-ghost" @click="exportCSV">📤 导出 CSV</button>
           <input ref="csvInput" type="file" accept=".csv" style="display:none" @change="importCSV" />
         </div>
@@ -50,7 +50,7 @@
       <div class="composer-actions">
         <button class="btn btn-primary btn-sm" @click="copyComposed">📋 一键复制</button>
         <button class="btn btn-ghost btn-sm" @click="clearComposed">🗑 一键清空</button>
-        <span class="composer-stat" v-if="orderedItems.length > 0">已选 {{ orderedItems.length }} 项</span>
+        <span class="composer-stat" v-if="orderedTags.length > 0">已选 {{ orderedTags.length }} 项</span>
       </div>
     </div>
 
@@ -151,12 +151,6 @@ function updateComposed() {
   composedText.value = names.join(', ')
 }
 
-function syncComposed() {
-  selectedTags.value.clear()
-  orderedTags.value = []
-  composedText.value = ''
-}
-
 // 新增 Tag
 function addTag() {
   editTagModal.value = { isNew: true, id: '', name: '', cn_name: '', wiki: '' }
@@ -217,6 +211,7 @@ function triggerImportCSV() {
 async function importCSV(e) {
   const file = e.target.files?.[0]
   if (!file) return
+  if (!isAdmin.value) { toast('仅管理员可导入 CSV', 'error'); return }
   e.target.value = ''
   try {
     // 自动检测编码（UTF-8 / GB18030），避免中文乱码
@@ -269,8 +264,6 @@ function copyComposed() {
 }
 
 function clearComposed() {
-  selectedNotes.value.clear()
-  orderedNotes.value = []
   selectedTags.value.clear()
   orderedTags.value = []
   composedText.value = ''

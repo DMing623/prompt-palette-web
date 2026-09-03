@@ -18,6 +18,7 @@ export const store = reactive({
   activeTagId: '',
   search: '',
   keyboardDisabled: false,
+  importing: false,      // 导入进度遮罩（全局）
 
   // 游客 AI 配置（localStorage）
   visitorAi: {

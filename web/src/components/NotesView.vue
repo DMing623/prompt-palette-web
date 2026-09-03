@@ -61,7 +61,12 @@
                 <input v-model="store.search" placeholder="搜索便签名称或内容…" />
                 <button v-if="store.search" class="search-clear" @click="store.search = ''">✕</button>
               </div>
-              <button v-if="isAdmin" class="btn btn-primary btn-sm" @click="promptAddNote">＋ 新建便签</button>
+              <template v-if="isAdmin">
+                <button class="btn btn-ghost btn-sm" @click="onExport">📤 导出</button>
+                <button class="btn btn-ghost btn-sm" @click="triggerImport">📥 导入</button>
+                <input ref="importInput" type="file" accept=".json" style="display:none" @change="onImport" />
+                <button class="btn btn-primary btn-sm" @click="promptAddNote">＋ 新建便签</button>
+              </template>
             </div>
           </div>
 
@@ -143,7 +148,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { store, toast, askConfirm } from '../store'
 import { api } from '../api'
-import { genId } from '../utils'
+import { genId, decodeFileText } from '../utils'
 import NoteCard from './NoteCard.vue'
 
 // 事件总线：NoteCard 通过 window 事件触发编辑
@@ -166,6 +171,57 @@ const filteredNotes = computed(() => {
 
 const noteModal = ref(null)
 const tagModal = ref(null)
+const importInput = ref(null)
+
+// ---- 导出 / 导入（管理员专属，作用于标签便签数据） ----
+async function onExport() {
+  try {
+    const data = await api.exportAll()
+    const blob = JSON.stringify(data, null, 2)
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([blob], { type: 'application/json' }))
+    a.download = `prompt-palette-export-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    toast('导出成功', 'success')
+  } catch (e) {
+    toast('导出失败: ' + e.message, 'error')
+  }
+}
+
+function triggerImport() {
+  importInput.value?.click()
+}
+
+async function onImport(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  e.target.value = ''
+  store.importing = true
+  try {
+    // 自动检测文件编码（UTF-8 / GB18030），避免中文乱码
+    const text = await decodeFileText(file)
+    const data = JSON.parse(text)
+    // 后端返回保存后的完整数据（规避 KV 最终一致性导致的读延迟）
+    const resp = await api.importAll(data)
+    if (resp.main && resp.main.tags) {
+      store.main = resp.main
+      if (!store.activeTagId || !store.main.tags.find(t => t.id === store.activeTagId)) {
+        store.activeTagId = store.main.tags[0]?.id || ''
+      }
+    }
+    if (resp.tags && resp.tags.items) {
+      store.tagsData = resp.tags.items
+    }
+    toast('导入成功', 'success')
+    // 后台静默同步一次（无需阻塞 UI；若 KV 未传播会短暂读取旧值，可自动恢复）
+    setTimeout(() => { refresh().catch(() => {}) }, 1500)
+  } catch (err) {
+    toast('导入失败: ' + err.message, 'error')
+  } finally {
+    store.importing = false
+  }
+}
 
 // 监听编辑事件
 function onEditNote(e) {
