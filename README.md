@@ -1,189 +1,346 @@
-# 🎨 PromptPalette Web - 提示词便签管家（云端版）
+# 🎨 PromptPalette Web — 提示词便签管家
 
-将油猴脚本 [PromptPalette](https://github.com/DMing623/prompt-palette-userscript) 完整复刻为 **Web 应用**，部署在 Cloudflare Workers（免费），使用 **Cloudflare KV** 作为数据存储。
+> **提示词管理 + 便签组合 + AI 对话**，一站式云端工具。
+>
+> 在线体验：[主站](https://palette.lunisolar.de5.net) ｜ [GitHub 演示站](https://dming623.github.io/prompt-palette-web/)
 
-## 🚀 在线访问
+---
 
-| 站点 | 地址 | 说明 |
-| :--- | :--- | :--- |
-| **线上主站** | https://palette.lunisolar.de5.net | Cloudflare Worker，完整功能（含管理员） |
-| **GitHub 演示站** | https://dming623.github.io/prompt-palette-web/ | 静态演示，跨域调用主站 API（游客模式） |
+## 目录
 
-> 演示站部署于 GitHub Pages（`gh-pages` 分支），前端自动检测所处域名，跨域访问线上 Worker API，体验完整游客功能（浏览/组合/自带 Key 使用 AI）。
+- [功能特性](#功能特性)
+- [技术架构](#技术架构)
+- [权限模型](#权限模型)
+- [快速开始](#快速开始)
+- [部署指南](#部署指南)
+- [API 参考](#api-参考)
+- [数据格式](#数据格式)
+- [常见问题](#常见问题)
+
+---
 
 ## 功能特性
 
-| 模块 | 说明 |
-| :--- | :--- |
-| 📋 **便签管理** | 标签分类 + 便签增删改查、搜索过滤、剪贴板复制 |
-| 🧩 **组合面板** | 便签组合 + 独立 Tag 组合（name/cn_name/wiki 三项）、CSV 导入导出 |
-| 🤖 **AI 助手** | OpenAI 兼容接口、SSE 流式输出、工具调用（function calling）、MCP (streamhttp) 协议、多对话历史 |
-| 📤 **导入导出** | 管理员可导出/导入完整数据 JSON 备份 |
+### 📋 便签管理
 
-## 权限模型（单管理员 + 游客只读）
+将提示词按**标签分类**管理，每个标签下可包含多个**便签**（即提示词卡片）。
+
+| 功能 | 说明 |
+| :--- | :--- |
+| **标签管理** | 新建、切换、重命名标签（管理员）；游客只读查看 |
+| **便签 CRUD** | 每个标签下可增删改便签，含名称 + 内容（提示词） |
+| **实时搜索** | 在便签列表中按名称或内容关键词模糊搜索 |
+| **一键复制** | 每张便签卡片底部"复制"按钮，直接写入剪贴板 |
+| **查看全文** | 点击"查看"弹出模态框展示完整内容，同时可复制 |
+
+### 🧩 组合面板
+
+将多个 Tag 按顺序组合成一条完整的提示词。
+
+| 功能 | 说明 |
+| :--- | :--- |
+| **Tag 组合** | 从独立 Tag 列表中点击选择，按点击顺序自动编号、拼接 |
+| **CSV 导入/导出** | 支持 name/cn_name/wiki 三列的 CSV 格式，自动追加合并、去重 |
+| **一键复制/清空** | 组合结果可一键复制到剪贴板或清空重选 |
+| **搜索过滤** | 实时搜索 Tag（按 name/cn_name/wiki 模糊匹配） |
+| **分块渲染** | 大数量 Tag 时采用增量渲染（每次 120 个），滚动自动加载，搜索防抖 |
+| **编码兼容** | 导入时自动检测 UTF-8（含 BOM）/ GB18030 编码，避免中文乱码 |
+
+### 🤖 AI 助手
+
+内置 AI 对话面板，支持流式对话与工具调用。
+
+| 功能 | 说明 |
+| :--- | :--- |
+| **OpenAI 兼容** | 支持任意 OpenAI 兼容 API（如 GPT、DeepSeek、Kimi 等） |
+| **SSE 流式输出** | 无工具模式下直接透传上游 SSE 流，实时显示 token 级输出 |
+| **工具调用** | AI 可调用 `list_tags`、`get_note_content`、`search_local_tags` 等工具（读写分离） |
+| **MCP 协议** | 支持 Streamable HTTP 格式的 MCP 工具，后端代理转发 |
+| **多对话历史** | 侧边栏管理，离线保存到 localStorage，支持切换/删除/新建 |
+| **Markdown 渲染** | AI 回复自动渲染 Markdown（代码块复制、表格、链接等） |
+| **自定义 System Prompt** | 管理员和游客可分别设置自己的系统提示 |
+| **上下文轮次限制** | 可控制发送给 AI 的历史轮次，节约 Token 消耗 |
+
+### 🔐 数据导入导出
+
+| 功能 | 说明 |
+| :--- | :--- |
+| **JSON 导出** | 管理员一键导出完整数据（主标签 + 独立 Tag），JSON 格式 |
+| **JSON 导入** | 支持 Web 版导出格式与油猴旧格式（自动识别，含 `notes` 字段的视为主数据） |
+| **CSV 导入导出** | Tag 组合面板专属，单独管理，不干扰主数据 |
+| **编码自动检测** | 导入时自动识别 UTF-8 / GB18030 编码，避免乱码 |
+
+---
+
+## 技术架构
+
+```
+┌─────────────────────────────────────────────────┐
+│                 浏览器 (Vue 3 + Vite)            │
+│  ┌──────────┐ ┌──────────┐ ┌───────────────┐   │
+│  │ 便签管理  │ │ 组合面板  │ │  AI 对话面板  │   │
+│  │ NotesView│ │Composer  │ │   AiView      │   │
+│  └────┬─────┘ └────┬─────┘ └──────┬────────┘   │
+│       └─────────────┼──────────────┘            │
+│                    │  API 调用                   │
+│         ┌──────────┴───────────┐                │
+│         │  api.js 自动检测域名 │                │
+│         │  同域→相对路径 /api  │                │
+│         │  跨域→线上 Worker   │                │
+│         └──────────┬───────────┘                │
+└────────────────────┼────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────┐
+│        Cloudflare Workers (边缘计算)             │
+│  ┌─────────────────────────────────────────┐    │
+│  │           worker/index.js               │    │
+│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐   │    │
+│  │  │认证  │ │CRUD  │ │AI代理│ │MCP   │   │    │
+│  │  │Auth  │ │KV    │ │SSE   │ │Proxy │   │    │
+│  │  └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘   │    │
+│  │     └────────┼─────────┼────────┘        │    │
+│  │        ┌─────┴──────┐                   │    │
+│  │        │   CORS     │                   │    │
+│  │        │  统一处理   │                   │    │
+│  │        └────────────┘                   │    │
+│  └─────────────────────────────────────────┘    │
+│              │           │                      │
+│              ▼           ▼                      │
+│     ┌────────────┐ ┌──────────┐                 │
+│     │  KV 存储   │ │ASSETS    │                 │
+│     │ main_data  │ │静态资源   │                 │
+│     │ tags_data  │ │(Vite构建) │                 │
+│     └────────────┘ └──────────┘                 │
+└─────────────────────────────────────────────────┘
+```
+
+### 前端技术栈
+
+| 层 | 技术 | 说明 |
+| :--- | :--- | :--- |
+| 框架 | **Vue 3** (Composition API + `<script setup>`) | 响应式视图层 |
+| 构建 | **Vite 6** | 极速开发体验，`base: './'` 兼容子路径部署 |
+| 状态管理 | **Vue reactive** 轻量状态 | 全局 store + 每个组件本地 ref |
+| 样式 | **CSS 变量** + 暗色主题 | 深色背景 + 渐变点缀，滚动条美化 |
+| 编码 | 前端 `TextDecoder` 自动检测 | UTF-8 → GB18030 回退，BOM 处理 |
+| 渲染 | 分块增量渲染 | Tag 列表每次 120 个，滚动加载，搜索防抖 |
+
+### 后端技术栈
+
+| 层 | 技术 | 说明 |
+| :--- | :--- | :--- |
+| 运行时 | **Cloudflare Workers** | 边缘计算，低延迟 |
+| 存储 | **Cloudflare KV** | 最终一致性键值存储，30s 内存缓存加速 |
+| 认证 | **HMAC-SHA256 签名 Cookie** | 管理员登录凭据，同域 Lax / 跨域 None+Secure |
+| CORS | **动态 Origin 回显** | 支持 GitHub Pages 演示站跨域调用，配合 credentials |
+| AI 代理 | **非流式工具循环 + 流式 SSE 透传** | 无工具时透传上游 SSE，有工具时循环执行 function calling |
+| MCP 代理 | **JSON-RPC over HTTP** | 转发 initialize / tools/list / tools/call |
+
+---
+
+## 权限模型
 
 | 能力 | 游客 | 管理员 |
 | :--- | :---: | :---: |
 | 查看标签/便签/独立 Tag | ✅ | ✅ |
 | 便签组合 / Tag 组合 / 复制 | ✅ | ✅ |
-| AI 对话 | ✅（必须自带 API URL + Key） | ✅（使用环境变量配置） |
+| AI 对话 | ✅（自带 API URL + Key） | ✅（使用环境变量） |
 | 增删改标签/便签/独立 Tag | ❌ | ✅ |
 | 导入导出 JSON 备份 | ❌ | ✅ |
-| AI 工具调用 | 只读工具（查看/搜索） | 读写工具（增/删/改数据） |
+| AI 工具调用 | 只读（查看/搜索） | 读写（增/删/改） |
 
-> **安全要点**：游客的 AI 请求携带的是**游客自己的** `X-API-URL` / `X-API-Key` 请求头，后端仅做透传代理，绝不注入管理员的密钥；写操作端点全部要求管理员 Cookie 鉴权。
+> **安全设计**：管理员登录凭据使用 HMAC-SHA256 签名的 HttpOnly Cookie，`ADMIN_PASSWORD` 等敏感信息存储在 Cloudflare Secrets（绝不进入代码仓库）。游客 AI 请求通过 `X-API-URL` / `X-API-Key` 请求头透传，后端绝不注入管理员密钥。
 
-## 项目结构
+---
 
-```
-prompt-palette-web/
-├── wrangler.toml.example  # 配置模板（复制为 wrangler.toml 后填写；真实配置已被 gitignore，不会上传）
-├── worker/
-│   └── index.js           # 后端 API（认证 / KV CRUD / AI 代理 / MCP 代理 / 静态资源）
-└── web/                   # 前端（Vue 3 + Vite）
-    ├── src/
-    │   ├── App.vue            # 主布局 + 导航
-    │   ├── store.js           # 全局状态
-    │   ├── api.js             # API 客户端（自动检测部署域 + SSE 流式解析）
-    │   ├── utils.js           # Markdown 渲染 / CSV 解析等
-    │   └── components/
-    │       ├── NotesView.vue      # 便签管理（标签栏 + 便签网格）
-    │       ├── ComposerView.vue   # 组合面板（便签/Tag 组合）
-    │       ├── AiView.vue         # AI 对话（多会话历史）
-    │       ├── AiSettingsModal.vue# AI 设置（管理员/游客）
-    │       ├── LoginModal.vue     # 管理员登录
-    │       └── ConfirmDialog.vue  # 确认框
-```
+## 快速开始
 
-## 部署步骤
+### 线上使用
 
-### 1. 准备环境
+直接访问 https://palette.lunisolar.de5.net
 
-- 安装 [Node.js](https://nodejs.org/) (>= 18)
-- 安装 [wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) 并登录 Cloudflare：
-  ```bash
-  npm install -g wrangler
-  wrangler login
-  ```
+- **游客**：无需登录，直接浏览便签、组合 Tag、使用 AI（需自备 API Key）
+- **管理员**：点击右上角「登录管理」输入用户名密码
 
-### 2. 初始化配置
+### 本地开发
 
 ```bash
+# 克隆
+git clone https://github.com/DMing623/prompt-palette-web.git
 cd prompt-palette-web
-# 复制配置模板并填写
-cp wrangler.toml.example wrangler.toml
-# 创建 KV 命名空间，把输出的 id 填入 wrangler.toml
-wrangler kv namespace create KV
+
+# 前端开发
+cd web && npm install && npm run dev
+
+# Worker 本地调试（需先配置 KV 和 secrets）
+cd .. && wrangler dev
 ```
 
-### 3. 配置环境变量（secrets）
+---
+
+## 部署指南
+
+### 前置条件
+
+- Node.js >= 18
+- Cloudflare 账户，安装 [wrangler CLI](https://developers.cloudflare.com/workers/wrangler/)
+
+### 部署步骤
 
 ```bash
-# 管理员账号密码（必填）
+# 1. 登录
+wrangler login
+
+# 2. 初始化配置
+cd prompt-palette-web
+cp wrangler.toml.example wrangler.toml
+wrangler kv namespace create KV  # 将输出的 ID 填入 wrangler.toml
+
+# 3. 设置 secrets（敏感信息）
 wrangler secret put ADMIN_USERNAME
 wrangler secret put ADMIN_PASSWORD
-
-# 管理员 AI 配置（必填，OpenAI 兼容接口）
-wrangler secret put AI_API_URL      # 例如 https://api.openai.com/v1/chat/completions
+wrangler secret put AI_API_URL
 wrangler secret put AI_API_KEY
-
-# 会话签名密钥（强烈建议，随机字符串即可）
 wrangler secret put SESSION_SECRET
-```
 
-### 4. 构建并部署
-
-```bash
-# 安装前端依赖
-cd web && npm install && cd ..
-
-# 一条命令部署（自动构建前端 + 部署 Worker）
+# 4. 构建并部署
 npm run deploy
 ```
 
-### 5. 本地开发调试
+### 配置说明
+
+- `wrangler.toml` 是真实配置（含 KV ID、自定义域名等），已被 `.gitignore` 排除，不会上传到 GitHub
+- `wrangler.toml.example` 是公开模板，clone 后复制为 `wrangler.toml` 填写即可
+
+### 演示站部署
+
+前端构建产物自动使用相对路径，兼容 GitHub Pages 子路径部署：
 
 ```bash
-cd prompt-palette-web
-
-# 终端1：启动前端开发服务器（代理 /api 到本地 worker）
-cd web && npm run dev
-
-# 终端2：启动本地 Worker（需要先完成步骤 2、3）
-wrangler dev
-```
-
-> 本地调试时 Cookie 不带 `Secure` 属性，登录可正常工作；线上 HTTPS 自动加 `Secure`；跨域调用（如 GitHub Pages 演示站）自动使用 `SameSite=None; Secure`。
-
-### 6. 部署 GitHub Pages 演示站（可选）
-
-```bash
-# 构建前端产物（vite base 已设为相对路径 ./，兼容子路径）
 cd web && npm run build && cd ..
-
-# 将产物推送到 gh-pages 分支（仓库 Pages 已配置该分支）
 git subtree push --prefix web/dist origin gh-pages
 ```
 
-> 演示站前端自动检测域名：在 Worker 主域上则同域调用 `/api`；在 GitHub Pages 等外部域则跨域调用线上 Worker API（CORS 已配置）。
+前端 `api.js` 自动检测所处域名：在 Worker 主域上时同域调用 `/api`，在 GitHub Pages 等外部域时跨域调用线上 Worker API（CORS 已配置）。
 
-## 环境变量一览
+---
 
-| 变量 | 类型 | 必填 | 说明 |
-| :--- | :--- | :---: | :--- |
-| `ADMIN_USERNAME` | Secret | ✅ | 管理员用户名 |
-| `ADMIN_PASSWORD` | Secret | ✅ | 管理员密码 |
-| `AI_API_URL` | Secret | ✅ | OpenAI 兼容 chat/completions 地址（管理员专用） |
-| `AI_API_KEY` | Secret | ✅ | 管理员 API 密钥 |
-| `SESSION_SECRET` | Secret | ⭐ | 会话签名密钥（不设则用 ADMIN_PASSWORD 派生） |
-| `AI_MODEL` | Var | ❌ | 管理员默认模型名，留空用接口默认 |
-
-## API 一览
+## API 参考
 
 | 方法 | 路径 | 权限 | 说明 |
 | :--- | :--- | :--- | :--- |
 | GET | `/api/health` | 公开 | 健康检查 |
-| POST | `/api/auth/login` | 公开 | 管理员登录（设 HttpOnly Cookie） |
+| POST | `/api/auth/login` | 公开 | 管理员登录 |
 | POST | `/api/auth/logout` | 公开 | 登出 |
 | GET | `/api/auth/me` | 公开 | 当前身份（admin/visitor） |
 | GET | `/api/data` | 公开 | 读取主数据（标签/便签） |
-| PUT | `/api/data` | 管理员 | 写入主数据 |
+| PUT | `/api/data` | 管理员 | 写入主数据（返回完整数据） |
 | GET | `/api/tags-data` | 公开 | 读取独立 Tag 数据 |
 | PUT | `/api/tags-data` | 管理员 | 写入独立 Tag 数据 |
 | GET | `/api/export` | 管理员 | 导出完整备份 |
-| POST | `/api/import` | 管理员 | 导入备份 |
-| POST | `/api/ai/chat` | 公开* | AI 对话（管理员用环境变量；游客用请求头自带 Key） |
-| POST | `/api/ai/mcp/init` | 公开* | MCP initialize 代理 |
-| POST | `/api/ai/mcp/list` | 公开* | MCP tools/list 代理 |
-| POST | `/api/ai/mcp/call` | 公开* | MCP tools/call 代理 |
+| POST | `/api/import` | 管理员 | 导入备份（自动识别格式 + 返回完整数据） |
+| POST | `/api/ai/chat` | 公开* | AI 对话（SSE 流式） |
+| POST | `/api/ai/mcp/init` | 公开* | MCP initialize |
+| POST | `/api/ai/mcp/list` | 公开* | MCP tools/list |
+| POST | `/api/ai/mcp/call` | 公开* | MCP tools/call |
 
-\* `/api/ai/*` 中：管理员通过 Cookie 认证后后端自动注入环境变量密钥；游客需在请求头携带 `X-API-URL` 和 `X-API-Key`。
+\* `/api/ai/*` 中：管理员通过 Cookie 认证后自动注入环境变量密钥；游客需在请求头携带 `X-API-URL` 和 `X-API-Key`。
 
-## 数据迁移（从油猴脚本导入）
+---
 
-1. 在 Tampermonkey 中打开旧脚本，点击 📤 导出 JSON，得到备份文件（`tags` + `ui` 结构）。
-2. 管理员登录 Web 版 → 顶部「📥 导入」选择该 JSON 即可。
-   > 导入端会自动识别旧格式（含 `ui` 字段），仅提取 `tags` 部分。
-3. 独立 Tag 数据（CSV）可在「🧩 组合 → Tag 组合 → 📥 导入 CSV」中导入。
+## 数据格式
+
+### KV 存储结构
+
+**`main_data`**（主标签数据）：
+```json
+{
+  "tags": [
+    {
+      "id": "lxyz123abc",
+      "name": "人物",
+      "notes": [
+        { "id": "abc123", "name": "写作助手", "content": "你是一位资深小说作家..." }
+      ]
+    }
+  ],
+  "updatedAt": 1700000000000
+}
+```
+
+**`tags_data`**（独立 Tag 数据，组合面板专用）：
+```json
+{
+  "items": [
+    { "id": "txxxx", "name": "1girl", "cn_name": "1个女孩,单人", "wiki": "画面中只出现一个女性角色" }
+  ],
+  "updatedAt": 1700000000000
+}
+```
+
+### 导入 JSON 格式
+
+支持三种格式自动识别：
+
+| 格式 | 结构 | 来源 |
+| :--- | :--- | :--- |
+| **Web 新版** | `{ main: {tags}, tags: {items} }` | Web 版导出 |
+| **油猴旧版** | `{ tags: [{id,name,notes}], ui }` | 油猴脚本导出（自动识别 `notes` 字段） |
+| **纯 Tag 数组** | `[{id,name,cn_name,wiki}]` | 独立 Tag 数据 |
+
+### CSV 格式（Tag 组合导入导出）
+
+```csv
+name,cn_name,wiki
+1girl,"1个女孩,单人,女孩,人物",画面中只出现一个女性角色
+solo,"单人,独图,单独",画面中只出现一个人物
+```
+
+- 首行为表头 `name,cn_name,wiki`
+- 含逗号/引号/换行的字段用双引号包裹
+- 导入采用追加合并，按 name 去重
+- 编码：UTF-8 + BOM（Excel 兼容）
+
+---
 
 ## 常见问题
 
-**Q1: KV 免费额度够用吗？**
+### 导入后页面空白？
+
+**原因**：Cloudflare KV 是最终一致性存储，写入后立即读取可能在边缘节点返回旧值（空数据）。
+**解决**：我们已经做了三重保障——
+1. 导入接口返回保存后的完整数据，前端直接使用（不依赖 KV 重新读取）
+2. 前端 `loadAllData` 如果读到空数据会自动延迟重试（最多 3 次）
+3. 写操作接口（PUT data/tags-data）同样返回完整数据
+
+### KV 免费额度够用吗？
+
 够。Workers 免费版 KV：每日 10 万次读取、1000 次写入、1GB 存储。本应用每次刷新仅 2 次读（主数据 + Tag 数据），写操作只在管理员增删改时发生。
 
-**Q2: 管理员登录不上？**
-确认 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 已通过 `wrangler secret put` 设置。本地调试时用 `--var` 传入。
+### AI 请求 401？
 
-**Q3: AI 请求 401？**
-- 管理员：确认 `AI_API_URL`（完整 chat/completions 地址）和 `AI_API_KEY` 正确。
-- 游客：在 ⚙️ AI 设置中填写自己的 URL 和 Key，或直接调用 API 时带 `X-API-URL` / `X-API-Key` 头。
+- **管理员**：确认 `AI_API_URL`（完整 chat/completions 地址）和 `AI_API_KEY` 通过 `wrangler secret put` 正确设置
+- **游客**：在 ⚙️ AI 设置中填写自己的 URL 和 Key，或调用 API 时带 `X-API-URL` / `X-API-Key` 请求头
 
-**Q4: 工具调用（AI 读写便签）怎么生效？**
-需在 AI 设置中开启「启用工具调用」。管理员可增删改；游客仅可查看/搜索（写工具不会下发）。工具模式下后端使用非流式循环，最终结果以流式模拟输出。
+### 导入中文乱码？
 
-**Q5: 数据存在哪？**
-全部存在 Cloudflare KV（`main_data` / `tags_data` 两个键）。对话历史存在浏览器 localStorage。建议定期管理员「📤 导出」备份。
+Cloudflare Worker 和 KV 使用 **UTF-8** 编码。如果 CSV/JSON 文件是 GBK/GB2312 编码保存的（如 Excel 另存为 CSV），导入时会自动检测并转码。导出 CSV 时自动添加 UTF-8 BOM（`\uFEFF`），Excel 打开不会乱码。
+
+### 工具调用（AI 读写便签）怎么生效？
+
+在 AI 设置中开启「启用工具调用」。管理员可增删改数据；游客仅可查看/搜索（写工具不会下发）。工具模式下后端使用非流式循环，执行完工具调用后以 SSE 模拟流式输出最终结果。
+
+### 数据存在哪？
+
+**主数据**：Cloudflare KV（`main_data` / `tags_data` 两个键）
+**对话历史**：浏览器 `localStorage`（游客和管理员都一样）
+**AI 配置**：管理员 API Key 存在 Cloudflare Secrets；游客 API Key 存在浏览器 `localStorage`
+
+建议定期管理员「📤 导出」备份。
+
+---
 
 ## 版本
 
-v1.0.0 - 初始版本，完整复刻 PromptPalette v7.0 功能。
+v1.0.0 — 2025
