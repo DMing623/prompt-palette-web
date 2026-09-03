@@ -7,3 +7,10 @@ dist/
 
 # 私人配置（含 KV ID / 域名路由，禁止上传）
 wrangler.toml
+
+# 数据文件（真实数据全部存储在 Cloudflare KV，禁止上传到 GitHub）
+*.backup.json
+*.export.json
+exports/
+data/
+backup/

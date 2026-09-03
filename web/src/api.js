@@ -1,15 +1,38 @@
 // ---------- API 客户端 ----------
 
-// 自动检测 API 基础地址
-// 在 Worker 部署域上（同域）→ API 相对路径；在 GitHub Pages 等外部站点 → 指向线上 Worker
+// 自动检测：演示站（GitHub Pages）使用本地示例数据，不连接线上 API
+const IS_DEMO = location.hostname.includes('github.io') || location.hostname.includes('localhost')
+
+// ---------- 演示站示例数据（不含任何真实数据） ----------
+const DEMO_MAIN = {
+  tags: [
+    {
+      id: 'demo-tag-1',
+      name: '示例标签',
+      notes: [
+        { id: 'demo-note-1', name: '示例便签', content: '这是一个无害的示例便签，用于演示界面效果。' }
+      ]
+    }
+  ],
+  updatedAt: 0
+}
+
+const DEMO_TAGS = {
+  items: [
+    { id: 'demo-t1', name: '示例TagA', cn_name: '演示用', wiki: '这是一个无害的演示标签' },
+    { id: 'demo-t2', name: '示例TagB', cn_name: '演示用', wiki: '这是一个无害的演示标签' },
+    { id: 'demo-t3', name: '示例TagC', cn_name: '演示用', wiki: '这是一个无害的演示标签' }
+  ],
+  updatedAt: 0
+}
+
+// ---------- 线上 API 地址（仅非演示站使用） ----------
 const WORKER_ORIGIN = 'https://palette.lunisolar.de5.net'
 const API_BASE = (() => {
   const host = location.hostname
-  // 同域部署（Worker 或 localhost dev）
   if (host.endsWith('lunisolar.de5.net') || host.endsWith('.workers.dev') || host === 'localhost' || host === '127.0.0.1') {
     return ''
   }
-  // 演示站（GitHub Pages 等）→ 指向线上 Worker
   return WORKER_ORIGIN
 })()
 
@@ -38,43 +61,57 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  // 认证
-  me: () => request('/api/auth/me'),
-  login: (username, password) => request('/api/auth/login', {
-    method: 'POST', body: JSON.stringify({ username, password })
-  }),
-  logout: () => request('/api/auth/logout', { method: 'POST' }),
+  me: () => IS_DEMO
+    ? Promise.resolve({ ok: true, role: 'visitor' })
+    : request('/api/auth/me'),
 
-  // 数据
-  getData: () => request('/api/data'),
-  putData: (data) => request('/api/data', {
-    method: 'PUT', body: JSON.stringify(data)
-  }),
-  getTagsData: () => request('/api/tags-data'),
-  putTagsData: (items) => request('/api/tags-data', {
-    method: 'PUT', body: JSON.stringify({ items })
-  }),
+  login: (username, password) => IS_DEMO
+    ? Promise.resolve({ ok: true, username })
+    : request('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
 
-  // 导入导出（管理员）
-  exportAll: () => request('/api/export'),
-  importAll: (payload) => request('/api/import', {
-    method: 'POST', body: JSON.stringify(payload)
-  }),
+  logout: () => IS_DEMO
+    ? Promise.resolve({ ok: true })
+    : request('/api/auth/logout', { method: 'POST' }),
 
-  // MCP 代理
-  mcpInit: (url, headers) => request('/api/ai/mcp/init', {
-    method: 'POST', body: JSON.stringify({ url, headers })
-  }),
-  mcpList: (url, headers) => request('/api/ai/mcp/list', {
-    method: 'POST', body: JSON.stringify({ url, headers })
-  }),
-  mcpCall: (url, headers, toolName, args) => request('/api/ai/mcp/call', {
-    method: 'POST', body: JSON.stringify({ url, headers, toolName, arguments: args })
-  })
+  getData: () => IS_DEMO
+    ? Promise.resolve(DEMO_MAIN)
+    : request('/api/data'),
+
+  putData: (data) => IS_DEMO
+    ? Promise.resolve({ tags: data.tags || [], updatedAt: Date.now() })
+    : request('/api/data', { method: 'PUT', body: JSON.stringify(data) }),
+
+  getTagsData: () => IS_DEMO
+    ? Promise.resolve(DEMO_TAGS)
+    : request('/api/tags-data'),
+
+  putTagsData: (items) => IS_DEMO
+    ? Promise.resolve({ items, updatedAt: Date.now() })
+    : request('/api/tags-data', { method: 'PUT', body: JSON.stringify({ items }) }),
+
+  exportAll: () => IS_DEMO
+    ? Promise.resolve({ exportTime: new Date().toISOString(), main: DEMO_MAIN, tags: DEMO_TAGS })
+    : request('/api/export'),
+
+  importAll: (payload) => IS_DEMO
+    ? Promise.resolve({ ok: true, main: DEMO_MAIN, tags: DEMO_TAGS })
+    : request('/api/import', { method: 'POST', body: JSON.stringify(payload) }),
+
+  mcpInit: (url, headers) => request('/api/ai/mcp/init', { method: 'POST', body: JSON.stringify({ url, headers }) }),
+  mcpList: (url, headers) => request('/api/ai/mcp/list', { method: 'POST', body: JSON.stringify({ url, headers }) }),
+  mcpCall: (url, headers, toolName, args) => request('/api/ai/mcp/call', { method: 'POST', body: JSON.stringify({ url, headers, toolName, arguments: args }) })
 }
 
 // 流式 AI 聊天
 export async function chatStream({ isAdmin, messages, model, temperature, stream, systemPrompt, toolsEnabled, mcpConfig, contextLimit, onDelta, onDone, onError, visitorUrl, visitorKey }) {
+  // 演示站：直接返回模拟回复
+  if (IS_DEMO) {
+    const reply = '👋 这是演示模式，AI 对话需要连接线上主站才能使用。\n\n请访问 **https://palette.lunisolar.de5.net** 并配置你的 API Key 使用完整功能。'
+    onDelta && onDelta(reply)
+    onDone && onDone(reply)
+    return
+  }
+
   const headers = { 'Content-Type': 'application/json' }
   if (!isAdmin) {
     headers['X-API-URL'] = visitorUrl || ''
