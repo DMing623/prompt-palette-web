@@ -1,7 +1,8 @@
 // ---------- API 客户端 ----------
 
-// 自动检测：演示站（GitHub Pages）使用本地示例数据，不连接线上 API
-const IS_DEMO = location.hostname.includes('github.io') || location.hostname.includes('localhost')
+// 演示站（GitHub Pages 等静态托管）：仅使用内置示例数据，不发起任何网络请求
+// 其余场景（Worker 同域部署 / 本地开发）：一律使用相对路径 /api（同域请求）
+const IS_DEMO = location.hostname.includes('github.io')
 
 // ---------- 演示站示例数据（不含任何真实数据） ----------
 const DEMO_MAIN = {
@@ -26,15 +27,8 @@ const DEMO_TAGS = {
   updatedAt: 0
 }
 
-// ---------- 线上 API 地址（仅非演示站使用） ----------
-const WORKER_ORIGIN = 'https://palette.lunisolar.de5.net'
-const API_BASE = (() => {
-  const host = location.hostname
-  if (host.endsWith('lunisolar.de5.net') || host.endsWith('.workers.dev') || host === 'localhost' || host === '127.0.0.1') {
-    return ''
-  }
-  return WORKER_ORIGIN
-})()
+// 同域 API 基础路径（Worker 托管 assets 与 API 在同一域，相对路径即可）
+const API_BASE = ''
 
 async function request(path, options = {}) {
   const url = API_BASE + path
@@ -106,7 +100,7 @@ export const api = {
 export async function chatStream({ isAdmin, messages, model, temperature, stream, systemPrompt, toolsEnabled, mcpConfig, contextLimit, onDelta, onDone, onError, visitorUrl, visitorKey }) {
   // 演示站：直接返回模拟回复
   if (IS_DEMO) {
-    const reply = '👋 这是演示模式，AI 对话需要连接线上主站才能使用。\n\n请访问 **https://palette.lunisolar.de5.net** 并配置你的 API Key 使用完整功能。'
+    const reply = '👋 这是演示模式，仅展示界面 UI，未连接任何后端服务。\n\n如需使用完整功能（AI 对话、数据持久化、MCP 工具），请参照项目部署指南自行部署。'
     onDelta && onDelta(reply)
     onDone && onDone(reply)
     return

@@ -2,7 +2,7 @@
 
 > **提示词管理 + 便签组合 + AI 对话**，一站式云端工具。
 >
-> 在线体验：[主站](https://palette.lunisolar.de5.net) ｜ [GitHub 演示站](https://dming623.github.io/prompt-palette-web/)
+> 在线体验：[GitHub 演示站](https://dming623.github.io/prompt-palette-web/)
 
 ---
 
@@ -154,10 +154,8 @@ flowchart TB
 
 ### 线上使用
 
-直接访问 https://palette.lunisolar.de5.net
-
-- **游客**：无需登录，直接浏览便签、组合 Tag、使用 AI（需自备 API Key）
-- **管理员**：点击右上角「登录管理」输入用户名密码
+演示站（GitHub Pages）仅展示界面 UI，无后端功能。
+如需完整功能（AI、MCP、数据持久化），请参照部署指南自行部署。
 
 ### 本地开发
 
