@@ -1,6 +1,6 @@
 # 🎨 PromptPalette Web - 提示词便签管家（云端版）
 
-将油猴脚本 [PromptPalette](../提示词脚本/PromptPalette.js) 完整复刻为 **Web 应用**，部署在 Cloudflare Workers（免费），使用 **Cloudflare KV** 作为数据存储。
+将油猴脚本 [PromptPalette](https://github.com/DMing623/prompt-palette-userscript) 完整复刻为 **Web 应用**，部署在 Cloudflare Workers（免费），使用 **Cloudflare KV** 作为数据存储。
 
 ## 🚀 在线访问
 
