@@ -21,8 +21,6 @@
         </div>
       </div>
       <div class="header-right">
-        <button v-if="store.role === 'admin'" class="btn btn-ghost btn-sm" @click="showAiSettings = true">⚙️ 设置</button>
-        <div v-else class="btn btn-ghost btn-sm" @click="showAiSettings = true">⚙️ AI 设置</div>
         <button v-if="store.role === 'admin'" class="btn btn-ghost btn-sm btn-logout" @click="onLogout">退出</button>
         <button v-else class="btn btn-primary btn-sm" @click="showLogin = true">登录管理</button>
       </div>
