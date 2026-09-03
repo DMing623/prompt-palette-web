@@ -5,7 +5,10 @@
       <aside class="conv-sidebar" :class="{ open: showSidebar }">
         <div class="sidebar-header">
           <span>对话历史</span>
-          <button class="btn btn-sm btn-ghost" @click="newConversation">＋ 新建</button>
+          <div class="sidebar-header-btns">
+            <button class="btn btn-sm btn-ghost" @click="newConversation">＋ 新建</button>
+            <button class="btn btn-sm btn-ghost sidebar-close" @click="showSidebar = false" title="关闭">✕</button>
+          </div>
         </div>
         <div class="conv-list">
           <div v-for="conv in convStore.conversations" :key="conv.id"
@@ -338,6 +341,9 @@ watch(streaming, (val) => {
 <style scoped>
 .ai-view {
   max-height: calc(100vh - 130px);
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
 }
 .ai-layout {
   display: grid;
@@ -362,6 +368,18 @@ watch(streaming, (val) => {
   font-weight: 600;
   font-size: 14px;
 }
+.sidebar-header-btns {
+  display: flex;
+  gap: 4px;
+}
+.sidebar-close {
+  color: var(--text-faint);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.sidebar-close:hover { background: var(--bg-card); color: var(--text); }
 .conv-list { flex: 1; overflow-y: auto; padding: 8px; }
 .conv-item {
   display: flex;
@@ -497,15 +515,19 @@ watch(streaming, (val) => {
 @media (max-width: 768px) {
   .ai-layout { grid-template-columns: 1fr; }
   .conv-sidebar {
-    position: fixed;
+    position: absolute;
     left: 0;
     top: 0;
     bottom: 0;
     width: 280px;
-    z-index: 500;
+    z-index: 50;
     border-radius: 0;
+    border-left: none;
+    border-top-left-radius: var(--radius);
+    border-bottom-left-radius: var(--radius);
     transform: translateX(-100%);
     transition: transform 0.25s ease;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
   }
   .conv-sidebar.open { transform: translateX(0); }
   .sidebar-toggle { display: inline-flex !important; }

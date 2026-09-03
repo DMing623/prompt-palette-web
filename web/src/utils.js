@@ -71,6 +71,26 @@ export function toCSV(headers, rows) {
   return lines.join('\n')
 }
 
+// ---------- 编码检测与解码 ----------
+// 自动识别 UTF-8 / GB18030(GBK) 编码，解决中文乱码问题
+export async function decodeFileText(file) {
+  const buf = await file.arrayBuffer()
+  // 去除 UTF-8 BOM
+  if (buf.byteLength >= 3 && new Uint8Array(buf, 0, 3).join(',') === '239,187,191') {
+    return new TextDecoder('utf-8').decode(buf.slice(3))
+  }
+  // 尝试严格 UTF-8 解码；失败则回退 GB18030（兼容 GBK/GB2312）
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf)
+  } catch {
+    try {
+      return new TextDecoder('gb18030').decode(buf)
+    } catch {
+      return new TextDecoder('utf-8').decode(buf)
+    }
+  }
+}
+
 // ---------- 简易 Markdown 渲染（渲染为 HTML） ----------
 // 基于 DOM 的安全渲染方式：先转义，再按行解析，再对行内代码/加粗等做受控替换
 export function markdownToHtml(md) {

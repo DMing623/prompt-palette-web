@@ -1,42 +1,7 @@
 <template>
   <div class="composer-panel">
-    <div class="composer-tabs">
-      <button :class="{ active: activeTab === 'notes' }" @click="activeTab = 'notes'">📋 便签组合</button>
-      <button :class="{ active: activeTab === 'tags' }" @click="activeTab = 'tags'">🏷️ Tag 组合</button>
-    </div>
-
-    <!-- 便签组合 -->
-    <div v-show="activeTab === 'notes'" class="composer-tab-body">
-      <div class="composer-layout">
-        <aside class="comp-tag-bar">
-          <button
-            v-for="tag in store.main.tags"
-            :key="tag.id"
-            :class="{ active: compTagId === tag.id }"
-            @click="compTagId = tag.id"
-          >{{ tag.name }}</button>
-        </aside>
-        <div class="comp-note-list">
-          <div v-if="!compTagId" class="empty-state"><div class="empty-icon">👈</div><p>选择左侧标签选择便签</p></div>
-          <template v-else>
-            <div v-for="note in currentNotes" :key="note.id"
-              class="comp-note-item"
-              :class="{ selected: selectedNotes.has(note.id) }"
-              @click="toggleNote(note.id)">
-              <span class="note-order" v-if="orderedNotes.indexOf(note.id) >= 0">{{ orderedNotes.indexOf(note.id) + 1 }}</span>
-              <div class="comp-note-info">
-                <div class="comp-note-name">{{ note.name }}</div>
-                <div class="comp-note-preview">{{ note.content }}</div>
-              </div>
-            </div>
-            <div v-if="currentNotes.length === 0" class="empty-state"><p>该标签下暂无便签</p></div>
-          </template>
-        </div>
-      </div>
-    </div>
-
     <!-- Tag 组合 -->
-    <div v-show="activeTab === 'tags'" class="composer-tab-body">
+    <div class="composer-tab-body">
       <div class="tags-toolbar">
         <div class="search-box">
           <span class="search-icon">🔍</span>
@@ -50,8 +15,8 @@
           <input ref="csvInput" type="file" accept=".csv" style="display:none" @change="importCSV" />
         </div>
       </div>
-      <div class="tag-list">
-        <div v-for="tag in filteredTags" :key="tag.id"
+      <div class="tag-list" ref="tagListRef" @scroll="onTagListScroll">
+        <div v-for="tag in visibleTags" :key="tag.id"
           class="comp-tag-item"
           :class="{ selected: selectedTags.has(tag.id) }"
           @click="toggleTag(tag.id)">
@@ -68,6 +33,9 @@
               {{ showWiki[tag.id] ? '▾' : '▸' }}
             </button>
           </div>
+        </div>
+        <div v-if="visibleTags.length > 0 && visibleTags.length < filteredTags.length" class="tag-loading-more">
+          <span class="spinner"></span> 加载中… {{ visibleTags.length }}/{{ filteredTags.length }}
         </div>
         <div v-if="filteredTags.length === 0" class="empty-state">
           <div class="empty-icon">🏷️</div>
@@ -105,33 +73,27 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { store, toast } from '../store'
 import { api } from '../api'
-import { genId, toCSV, parseCSV, downloadFile } from '../utils'
+import { genId, toCSV, parseCSV, downloadFile, decodeFileText } from '../utils'
 
 const isAdmin = computed(() => store.role === 'admin')
-const activeTab = ref('notes')
-const compTagId = ref(store.main.tags[0]?.id || '')
 const tagSearch = ref('')
 const csvInput = ref(null)
 const showWiki = ref({})
 const editTagModal = ref(null)
 
-// 便签组合状态
-const selectedNotes = ref(new Set())
-const orderedNotes = ref([])
-
 // Tag 组合状态
 const selectedTags = ref(new Set())
 const orderedTags = ref([])
-
 const composedText = ref('')
 
-const currentNotes = computed(() => {
-  const tag = store.main.tags.find(t => t.id === compTagId.value)
-  return tag?.notes || []
-})
+// ---------- 分块渲染（大数量 Tag 时保证流畅） ----------
+const TAG_CHUNK = 120           // 每次增量渲染数量
+const tagRenderCount = ref(TAG_CHUNK)
+const tagListRef = ref(null)
+let searchTimer = null
 
 const filteredTags = computed(() => {
   const q = tagSearch.value.trim().toLowerCase()
@@ -143,23 +105,25 @@ const filteredTags = computed(() => {
   )
 })
 
-const orderedItems = computed(() => {
-  if (activeTab.value === 'notes') return orderedNotes.value
-  return orderedTags.value
-})
+// 只渲染前 N 个，滚动到底部附近时增量追加
+const visibleTags = computed(() => filteredTags.value.slice(0, tagRenderCount.value))
 
-// 便签组合
-function toggleNote(id) {
-  const s = selectedNotes.value
-  if (s.has(id)) {
-    s.delete(id)
-    orderedNotes.value = orderedNotes.value.filter(x => x !== id)
-  } else {
-    s.add(id)
-    orderedNotes.value.push(id)
+function onTagListScroll(e) {
+  const el = e.target
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 300) {
+    if (tagRenderCount.value < filteredTags.value.length) {
+      tagRenderCount.value += TAG_CHUNK
+    }
   }
-  updateComposed()
 }
+
+// 搜索防抖 + 重置渲染数量
+watch(tagSearch, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    tagRenderCount.value = TAG_CHUNK
+  }, 250)
+})
 
 // Tag 组合
 function toggleTag(id) {
@@ -179,29 +143,15 @@ function toggleWiki(id) {
 }
 
 function updateComposed() {
-  if (activeTab.value === 'notes') {
-    const contents = []
-    for (const id of orderedNotes.value) {
-      for (const tag of store.main.tags) {
-        const note = tag.notes.find(n => n.id === id)
-        if (note) { contents.push(note.content); break }
-      }
-    }
-    composedText.value = contents.join('\n\n')
-  } else {
-    const names = []
-    for (const id of orderedTags.value) {
-      const tag = store.tagsData.find(t => t.id === id)
-      if (tag) names.push(tag.name)
-    }
-    composedText.value = names.join(', ')
+  const names = []
+  for (const id of orderedTags.value) {
+    const tag = store.tagsData.find(t => t.id === id)
+    if (tag) names.push(tag.name)
   }
+  composedText.value = names.join(', ')
 }
 
-// 监听页签切换 => 更新组合文本
 function syncComposed() {
-  selectedNotes.value.clear()
-  orderedNotes.value = []
   selectedTags.value.clear()
   orderedTags.value = []
   composedText.value = ''
@@ -255,7 +205,7 @@ async function deleteTag(tag) {
 function exportCSV() {
   const headers = ['name', 'cn_name', 'wiki']
   const rows = store.tagsData.map(t => [t.name, t.cn_name || '', t.wiki || ''])
-  const csv = toCSV(headers, rows)
+  const csv = '\uFEFF' + toCSV(headers, rows) // BOM 防乱码
   downloadFile(`tags-export-${new Date().toISOString().slice(0, 10)}.csv`, csv, 'text/csv')
   toast('CSV 导出成功', 'success')
 }
@@ -269,7 +219,8 @@ async function importCSV(e) {
   if (!file) return
   e.target.value = ''
   try {
-    const text = await file.text()
+    // 自动检测编码（UTF-8 / GB18030），避免中文乱码
+    const text = await decodeFileText(file)
     const rows = parseCSV(text)
     if (rows.length < 2) { toast('CSV 格式无效', 'error'); return }
     const headers = rows[0].map(h => h.trim().toLowerCase())
@@ -326,9 +277,7 @@ function clearComposed() {
   toast('已清空', 'info')
 }
 
-// 监听页签切换
-import { watch } from 'vue'
-watch(activeTab, () => syncComposed())
+
 </script>
 
 <style scoped>
@@ -364,80 +313,6 @@ watch(activeTab, () => syncComposed())
   flex: 1;
   overflow: hidden;
 }
-.composer-layout {
-  display: grid;
-  grid-template-columns: 160px 1fr;
-  gap: 12px;
-  height: 100%;
-}
-.comp-tag-bar {
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px;
-  overflow-y: auto;
-  max-height: 340px;
-}
-.comp-tag-bar button {
-  display: block;
-  width: 100%;
-  padding: 7px 10px;
-  border-radius: 8px;
-  text-align: left;
-  font-size: 13px;
-  color: var(--text-dim);
-  margin-bottom: 2px;
-}
-.comp-tag-bar button.active {
-  background: var(--primary);
-  color: #fff;
-}
-.comp-tag-bar button:hover:not(.active) { background: var(--bg-card); color: var(--text); }
-.comp-note-list {
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px;
-  overflow-y: auto;
-  max-height: 340px;
-}
-.comp-note-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.15s;
-  margin-bottom: 2px;
-}
-.comp-note-item:hover { background: var(--bg-card); }
-.comp-note-item.selected {
-  background: rgba(99, 102, 241, 0.12);
-  border: 1px solid rgba(99, 102, 241, 0.3);
-}
-.note-order {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--primary);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.comp-note-info { flex: 1; overflow: hidden; }
-.comp-note-name { font-size: 14px; font-weight: 500; }
-.comp-note-preview {
-  font-size: 12px;
-  color: var(--text-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .tags-toolbar {
   display: flex;
   align-items: center;
@@ -469,6 +344,15 @@ watch(activeTab, () => syncComposed())
 .comp-tag-item.selected {
   background: rgba(99, 102, 241, 0.12);
   border: 1px solid rgba(99, 102, 241, 0.3);
+}
+.tag-loading-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  color: var(--text-faint);
+  font-size: 13px;
 }
 .tag-order {
   width: 24px;

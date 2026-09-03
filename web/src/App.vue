@@ -43,6 +43,15 @@
     <ConfirmDialog v-if="store.confirm" />
     <AiSettingsModal v-if="showAiSettings" :is-admin="store.role === 'admin'" @close="showAiSettings = false" />
 
+    <!-- 导入进度遮罩 -->
+    <div v-if="importing" class="import-overlay">
+      <div class="import-box">
+        <div class="spinner spinner-lg"></div>
+        <div class="import-title">正在导入数据…</div>
+        <div class="import-sub">标签较多时可能需要数十秒，请勿关闭页面</div>
+      </div>
+    </div>
+
     <!-- Toast -->
     <div class="toast-container">
       <div v-for="t in store.toasts" :key="t.id" :class="'toast toast-' + t.type">{{ t.message }}</div>
@@ -54,6 +63,7 @@
 import { ref, onMounted } from 'vue'
 import { store, loadAllData, checkAuth, toast } from './store'
 import { api } from './api'
+import { decodeFileText } from './utils'
 import NotesView from './components/NotesView.vue'
 import ComposerView from './components/ComposerView.vue'
 import AiView from './components/AiView.vue'
@@ -64,6 +74,7 @@ import AiSettingsModal from './components/AiSettingsModal.vue'
 const showLogin = ref(false)
 const showAiSettings = ref(false)
 const importInput = ref(null)
+const importing = ref(false)
 
 async function onLogin() {
   showLogin.value = false
@@ -104,8 +115,10 @@ async function onImport(e) {
   const file = e.target.files?.[0]
   if (!file) return
   e.target.value = ''
+  importing.value = true
   try {
-    const text = await file.text()
+    // 自动检测文件编码（UTF-8 / GB18030），避免中文乱码
+    const text = await decodeFileText(file)
     const data = JSON.parse(text)
     // 后端返回保存后的完整数据（规避 KV 最终一致性导致的读延迟）
     const resp = await api.importAll(data)
@@ -123,6 +136,8 @@ async function onImport(e) {
     setTimeout(() => { loadAllData().catch(() => {}) }, 1500)
   } catch (err) {
     toast('导入失败: ' + err.message, 'error')
+  } finally {
+    importing.value = false
   }
 }
 </script>
@@ -228,5 +243,43 @@ async function onImport(e) {
   .header-nav button { flex: 1; justify-content: center; }
   .header-right { width: 100%; justify-content: center; }
   .app-main { padding: 10px 12px; }
+}
+
+/* 导入进度遮罩 */
+.import-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  background: rgba(5, 7, 12, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+.import-box {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-lg);
+  padding: 36px 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  animation: popIn 0.3s ease;
+}
+.import-box .spinner-lg {
+  width: 42px;
+  height: 42px;
+  border-width: 4px;
+}
+.import-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+.import-sub {
+  font-size: 13px;
+  color: var(--text-faint);
 }
 </style>
