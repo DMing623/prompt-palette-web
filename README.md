@@ -74,45 +74,41 @@
 
 ## 技术架构
 
-```
-┌─────────────────────────────────────────────────┐
-│                 浏览器 (Vue 3 + Vite)            │
-│  ┌──────────┐ ┌──────────┐ ┌───────────────┐   │
-│  │ 便签管理  │ │ 组合面板  │ │  AI 对话面板  │   │
-│  │ NotesView│ │Composer  │ │   AiView      │   │
-│  └────┬─────┘ └────┬─────┘ └──────┬────────┘   │
-│       └─────────────┼──────────────┘            │
-│                    │  API 调用                   │
-│         ┌──────────┴───────────┐                │
-│         │  api.js 自动检测域名 │                │
-│         │  同域→相对路径 /api  │                │
-│         │  跨域→线上 Worker   │                │
-│         └──────────┬───────────┘                │
-└────────────────────┼────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────┐
-│        Cloudflare Workers (边缘计算)             │
-│  ┌─────────────────────────────────────────┐    │
-│  │           worker/index.js               │    │
-│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐   │    │
-│  │  │认证  │ │CRUD  │ │AI代理│ │MCP   │   │    │
-│  │  │Auth  │ │KV    │ │SSE   │ │Proxy │   │    │
-│  │  └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘   │    │
-│  │     └────────┼─────────┼────────┘        │    │
-│  │        ┌─────┴──────┐                   │    │
-│  │        │   CORS     │                   │    │
-│  │        │  统一处理   │                   │    │
-│  │        └────────────┘                   │    │
-│  └─────────────────────────────────────────┘    │
-│              │           │                      │
-│              ▼           ▼                      │
-│     ┌────────────┐ ┌──────────┐                 │
-│     │  KV 存储   │ │ASSETS    │                 │
-│     │ main_data  │ │静态资源   │                 │
-│     │ tags_data  │ │(Vite构建) │                 │
-│     └────────────┘ └──────────┘                 │
-└─────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph 浏览器端[浏览器端 — Vue 3 + Vite]
+        NV[📋 NotesView<br/>便签管理]
+        CV[🧩 ComposerView<br/>组合面板]
+        AV[🤖 AiView<br/>AI 对话面板]
+        API[📡 api.js<br/>自动检测部署域名<br/>同域→相对路径 ｜ 跨域→线上 Worker]
+        NV & CV & AV --> API
+    end
+
+    subgraph CF[Cloudflare Workers — 边缘计算]
+        subgraph Worker[worker/index.js]
+            AUTH[🔐 认证<br/>HMAC-SHA256 Cookie]
+            CRUD[💾 CRUD<br/>KV 读写 + 数据校验]
+            AI[🧠 AI 代理<br/>SSE 透传 / 工具循环]
+            MCP[🔌 MCP 代理<br/>SSE 解析 / JSON-RPC]
+            CORS[🌐 CORS<br/>动态 Origin 回显]
+        end
+        KV[(🗂️ KV 存储<br/>main_data / tags_data)]
+        ASSETS[(📦 ASSETS<br/>Vite 构建物)]
+        Worker --> KV & ASSETS
+    end
+
+    subgraph External[外部服务]
+        AIAPI[🤖 OpenAI 兼容 API]
+        MCP_SRV[🔌 MCP 服务器<br/>Tavily 等]
+    end
+
+    API -->|HTTP/HTTPS| Worker
+    AI --> AIAPI
+    MCP --> MCP_SRV
+
+    style 浏览器端 fill:#1e293b,stroke:#64748b
+    style CF fill:#1e1b4b,stroke:#6366f1
+    style External fill:#1a1a2e,stroke:#e2e8f0
 ```
 
 ### 前端技术栈
@@ -343,4 +339,4 @@ Cloudflare Worker 和 KV 使用 **UTF-8** 编码。如果 CSV/JSON 文件是 GBK
 
 ## 版本
 
-v1.0.0 — 2025
+v1.1.0 — 2026

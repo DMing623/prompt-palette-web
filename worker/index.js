@@ -367,6 +367,36 @@ async function executeToolCall(toolCall, mainData, tagsData, isAdminUser) {
   return result;
 }
 
+// --- MCP 工具：解析 SSE 或 JSON 响应 ---
+async function mcpFetch(url, headers, body) {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', ...headers },
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error('HTTP ' + resp.status + ' ' + errText.slice(0, 200));
+  }
+  const ct = resp.headers.get('Content-Type') || '';
+  const text = await resp.text();
+  // 尝试直接 JSON
+  try { return JSON.parse(text); } catch {}
+  // SSE 解析：逐行取 data: 后的 JSON
+  let last = null;
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (t.startsWith('data:')) {
+      const payload = t.slice(5).trim();
+      if (payload && payload !== '[DONE]') {
+        try { last = JSON.parse(payload); } catch {}
+      }
+    }
+  }
+  if (last) return last;
+  throw new Error('MCP 响应解析失败 (Content-Type: ' + ct + ')');
+}
+
 // --- 合并 MCP 工具 ---
 async function getMCPTools(mcpConfig) {
   if (!mcpConfig || !mcpConfig.url || mcpConfig.enabled === false) return [];
@@ -378,12 +408,7 @@ async function getMCPTools(mcpConfig) {
     } catch {}
   }
   try {
-    const resp = await fetch(mcpConfig.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...headers },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 'list', method: 'tools/list', params: {} })
-    });
-    const data = await resp.json();
+    const data = await mcpFetch(mcpConfig.url, headers, { jsonrpc: '2.0', id: 'list', method: 'tools/list', params: {} });
     if (data.result && data.result.tools) {
       return data.result.tools.map(t => ({
         type: 'function',
@@ -411,17 +436,12 @@ async function executeMCPTool(toolName, args, mcpConfig) {
     } catch {}
   }
   try {
-    const resp = await fetch(mcpConfig.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...headers },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'call_' + Date.now(),
-        method: 'tools/call',
-        params: { name: mcpToolName, arguments: args }
-      })
+    const data = await mcpFetch(mcpConfig.url, headers, {
+      jsonrpc: '2.0',
+      id: 'call_' + Date.now(),
+      method: 'tools/call',
+      params: { name: mcpToolName, arguments: args }
     });
-    const data = await resp.json();
     return { content: JSON.stringify(data.result || data) };
   } catch (e) {
     return { content: JSON.stringify({ error: e.message }) };
@@ -675,7 +695,6 @@ async function handleMCP(request, action) {
     };
   }
   
-  // 先发 initialize（如果请求的是 init 或 list/call 需要先 init）
   let headers = { 'Content-Type': 'application/json' };
   if (mcpHeaders) {
     try {
@@ -685,38 +704,7 @@ async function handleMCP(request, action) {
   }
   
   try {
-    // 如果是 list 或 call，需要先确保已初始化
-    if (action !== 'init') {
-      // 发 init 请求
-      const initResp = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 'init',
-          method: 'initialize',
-          params: {
-            protocolVersion: '2024-11-05',
-            capabilities: {},
-            clientInfo: { name: 'prompt-palette-web', version: '1.0.0' }
-          }
-        })
-      });
-      // 忽略 init 返回，继续请求
-    }
-    
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'req_' + Date.now(),
-        method,
-        params
-      })
-    });
-    
-    const data = await resp.json();
+    const data = await mcpFetch(url, headers, { jsonrpc: '2.0', id: 'req_' + Date.now(), method, params });
     return json(data);
   } catch (e) {
     return error('MCP 请求失败: ' + e.message);
