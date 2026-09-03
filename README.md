@@ -2,6 +2,15 @@
 
 将油猴脚本 [PromptPalette](../提示词脚本/PromptPalette.js) 完整复刻为 **Web 应用**，部署在 Cloudflare Workers（免费），使用 **Cloudflare KV** 作为数据存储。
 
+## 🚀 在线访问
+
+| 站点 | 地址 | 说明 |
+| :--- | :--- | :--- |
+| **线上主站** | https://palette.lunisolar.de5.net | Cloudflare Worker，完整功能（含管理员） |
+| **GitHub 演示站** | https://dming623.github.io/prompt-palette-web/ | 静态演示，跨域调用主站 API（游客模式） |
+
+> 演示站部署于 GitHub Pages（`gh-pages` 分支），前端自动检测所处域名，跨域访问线上 Worker API，体验完整游客功能（浏览/组合/自带 Key 使用 AI）。
+
 ## 功能特性
 
 | 模块 | 说明 |
@@ -28,14 +37,14 @@
 
 ```
 prompt-palette-web/
-├── wrangler.toml          # Cloudflare Worker 配置
+├── wrangler.toml.example  # 配置模板（复制为 wrangler.toml 后填写；真实配置已被 gitignore，不会上传）
 ├── worker/
 │   └── index.js           # 后端 API（认证 / KV CRUD / AI 代理 / MCP 代理 / 静态资源）
 └── web/                   # 前端（Vue 3 + Vite）
     ├── src/
     │   ├── App.vue            # 主布局 + 导航
     │   ├── store.js           # 全局状态
-    │   ├── api.js             # API 客户端（含 SSE 流式解析）
+    │   ├── api.js             # API 客户端（自动检测部署域 + SSE 流式解析）
     │   ├── utils.js           # Markdown 渲染 / CSV 解析等
     │   └── components/
     │       ├── NotesView.vue      # 便签管理（标签栏 + 便签网格）
@@ -57,19 +66,14 @@ prompt-palette-web/
   wrangler login
   ```
 
-### 2. 创建 KV 命名空间
+### 2. 初始化配置
 
 ```bash
 cd prompt-palette-web
-wrangler kv:namespace create KV
-```
-
-创建成功后会输出一个 `id`，把它填入 `wrangler.toml`：
-
-```toml
-[[kv_namespaces]]
-binding = "KV"
-id = "你的-KV-命名空间-ID"
+# 复制配置模板并填写
+cp wrangler.toml.example wrangler.toml
+# 创建 KV 命名空间，把输出的 id 填入 wrangler.toml
+wrangler kv namespace create KV
 ```
 
 ### 3. 配置环境变量（secrets）
@@ -87,13 +91,6 @@ wrangler secret put AI_API_KEY
 wrangler secret put SESSION_SECRET
 ```
 
-可选的普通变量（写入 wrangler.toml `[vars]`）：
-
-```toml
-[vars]
-AI_MODEL = "gpt-4o-mini"   # 管理员默认模型，可留空
-```
-
 ### 4. 构建并部署
 
 ```bash
@@ -104,22 +101,31 @@ cd web && npm install && cd ..
 npm run deploy
 ```
 
-部署完成后会输出类似 `https://prompt-palette.<你的子域>.workers.dev` 的访问地址。
-
 ### 5. 本地开发调试
 
 ```bash
-npm install -g wrangler   # 已装可跳过
 cd prompt-palette-web
 
 # 终端1：启动前端开发服务器（代理 /api 到本地 worker）
 cd web && npm run dev
 
-# 终端2：启动本地 Worker（需要先在 wrangler.toml 填 KV id；本地 secret 用 --var 传参）
-wrangler dev --var ADMIN_USERNAME:admin --var ADMIN_PASSWORD:test123 --var AI_API_URL:https://... --var AI_API_KEY:sk-...
+# 终端2：启动本地 Worker（需要先完成步骤 2、3）
+wrangler dev
 ```
 
-> 本地调试时 Cookie 不带 `Secure` 属性，登录可正常工作；线上 HTTPS 自动加 `Secure`。
+> 本地调试时 Cookie 不带 `Secure` 属性，登录可正常工作；线上 HTTPS 自动加 `Secure`；跨域调用（如 GitHub Pages 演示站）自动使用 `SameSite=None; Secure`。
+
+### 6. 部署 GitHub Pages 演示站（可选）
+
+```bash
+# 构建前端产物（vite base 已设为相对路径 ./，兼容子路径）
+cd web && npm run build && cd ..
+
+# 将产物推送到 gh-pages 分支（仓库 Pages 已配置该分支）
+git subtree push --prefix web/dist origin gh-pages
+```
+
+> 演示站前端自动检测域名：在 Worker 主域上则同域调用 `/api`；在 GitHub Pages 等外部域则跨域调用线上 Worker API（CORS 已配置）。
 
 ## 环境变量一览
 
