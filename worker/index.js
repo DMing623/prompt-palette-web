@@ -799,7 +799,8 @@ export default {
           if (err) response = error(err);
           else {
             const saved = await saveMain(env, body);
-            response = json({ ok: true, updatedAt: saved.updatedAt });
+            // 返回完整数据，前端可直接用（规避 KV 一致性延迟）
+            response = json(saved);
           }
         }
       }
@@ -823,7 +824,8 @@ export default {
             if (err) response = error(err);
             else {
               const saved = await saveTags(env, { items });
-              response = json({ ok: true, updatedAt: saved.updatedAt });
+              // 返回完整数据，前端可直接用
+              response = json(saved);
             }
           }
         }
@@ -842,24 +844,41 @@ export default {
         if (!(await isAdmin(request, env))) response = error('需要管理员权限', 401);
         else {
           const body = await request.json();
-          if (body.main) {
-            const err = validateMainData(body.main);
-            if (err) response = error('主数据: ' + err);
-            else {
-              await saveMain(env, body.main);
-              response = response || json({ ok: true });
-            }
+          let savedMain = null, savedTags = null;
+          let importError = null;
+
+          // ---- 格式智能识别 ----
+          // 1) Web 新格式: { main: {tags:[...]}, tags: {items:[...]} }
+          // 2) 油猴旧格式: { tags: [{id,name,notes:[...]}], ui: {...} }  ← tags 是主标签数组
+          // 3) 纯独立 Tag: 数组或 {items:[...]}  ← 元素含 cn_name/wiki
+
+          const looksLikeMainTags = (arr) => Array.isArray(arr) && arr.length > 0 && Array.isArray(arr[0].notes);
+          const isTagsPayload = (t) => t && (Array.isArray(t.items) || Array.isArray(t));
+
+          // 处理主数据（body.main 或 油猴格式的 body.tags 且带 notes）
+          let mainPayload = null;
+          if (body.main) mainPayload = body.main;
+          else if (looksLikeMainTags(body.tags)) mainPayload = { tags: body.tags };
+
+          if (mainPayload) {
+            const err = validateMainData(mainPayload);
+            if (err) importError = '主数据: ' + err;
+            else savedMain = await saveMain(env, mainPayload);
           }
-          if (body.tags) {
-            const items = body.tags.items || body.tags;
+
+          // 处理独立 Tag 数据（body.tags 为 {items} 或纯数组，且不是油猴主标签格式）
+          if (!importError && isTagsPayload(body.tags) && !looksLikeMainTags(body.tags)) {
+            const items = Array.isArray(body.tags) ? body.tags : (body.tags.items || []);
             const err = validateTagsData(items);
-            if (err) response = error('Tag数据: ' + err);
-            else {
-              await saveTags(env, { items });
-              response = response || json({ ok: true });
-            }
+            if (err) importError = 'Tag数据: ' + err;
+            else savedTags = await saveTags(env, { items });
           }
-          if (!response) response = json({ ok: true });
+
+          if (importError) response = error(importError);
+          else {
+            // 返回保存后的完整数据，前端直接用响应更新页面（规避 KV 最终一致性延迟）
+            response = json({ ok: true, main: savedMain, tags: savedTags });
+          }
         }
       }
       // AI 聊天

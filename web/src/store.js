@@ -95,11 +95,18 @@ export function askConfirm(title, message, onConfirm, danger = true) {
 }
 
 // ---------- 数据加载 ----------
-export async function loadAllData() {
+export async function loadAllData(retryCount = 0) {
   store.loadingData = true
   store.dataError = ''
   try {
     const [main, tags] = await Promise.all([api.getData(), api.getTagsData()])
+    // KV 最终一致性：刚写入后读取可能拿到旧值（空数据），延迟重试
+    const hasMainData = Array.isArray(main.tags) && main.tags.length > 0
+    const hasTagsData = Array.isArray(tags.items ? tags.items : tags) && (tags.items ? tags.items.length > 0 : tags.length > 0)
+    if (!hasMainData && !hasTagsData && retryCount < 3) {
+      // 可能读到 KV 旧值（空），稍后重试
+      setTimeout(() => loadAllData(retryCount + 1), 1200 * (retryCount + 1))
+    }
     store.main = main
     store.tagsData = Array.isArray(tags) ? tags : (tags.items || [])
     if (store.activeTagId && !store.main.tags.find(t => t.id === store.activeTagId)) {

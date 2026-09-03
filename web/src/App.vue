@@ -107,11 +107,22 @@ async function onImport(e) {
   try {
     const text = await file.text()
     const data = JSON.parse(text)
-    await api.importAll(data)
+    // 后端返回保存后的完整数据（规避 KV 最终一致性导致的读延迟）
+    const resp = await api.importAll(data)
+    if (resp.main && resp.main.tags) {
+      store.main = resp.main
+      if (!store.activeTagId || !store.main.tags.find(t => t.id === store.activeTagId)) {
+        store.activeTagId = store.main.tags[0]?.id || ''
+      }
+    }
+    if (resp.tags && resp.tags.items) {
+      store.tagsData = resp.tags.items
+    }
     toast('导入成功', 'success')
-    await loadAllData()
-  } catch (e) {
-    toast('导入失败: ' + e.message, 'error')
+    // 后台静默同步一次（无需阻塞 UI；若 KV 未传播会短暂读取旧值，可自动恢复）
+    setTimeout(() => { loadAllData().catch(() => {}) }, 1500)
+  } catch (err) {
+    toast('导入失败: ' + err.message, 'error')
   }
 }
 </script>
