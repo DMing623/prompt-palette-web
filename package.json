@@ -1,0 +1,15 @@
+{
+  "name": "prompt-palette-web",
+  "private": true,
+  "version": "1.0.0",
+  "description": "PromptPalette - 提示词便签管家 Web 版",
+  "scripts": {
+    "dev:web": "cd web && npm run dev",
+    "build:web": "cd web && npm run build",
+    "deploy": "npm run build:web && wrangler deploy",
+    "dev:worker": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^3.100.0"
+  }
+}

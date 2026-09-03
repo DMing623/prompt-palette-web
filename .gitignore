@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+*.log
+.DS_Store
+
+# 私人配置（含 KV ID / 域名路由，禁止上传）
+wrangler.toml

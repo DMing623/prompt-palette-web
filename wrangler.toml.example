@@ -1,0 +1,43 @@
+# ============================================================
+# PromptPalette Web - Wrangler 配置模板（示例文件）
+# ============================================================
+# 使用方法：
+#   1. 复制此文件为 wrangler.toml：cp wrangler.toml.example wrangler.toml
+#   2. 填入你自己的 KV 命名空间 ID 和路由
+#   3. 用 `wrangler secret put <NAME>` 设置敏感变量（ADMIN_PASSWORD 等）
+#
+# ⚠️ 注意：wrangler.toml 包含你的私人配置，已被 .gitignore 忽略，
+#    请勿提交到公共仓库！
+
+name = "prompt-palette"
+main = "worker/index.js"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 静态资源（Vite 构建产物，执行 npm run build:web 后生成）
+assets = { directory = "./web/dist", binding = "ASSETS" }
+
+# 自定义域名路由（可选，把 xxxxx.example.com 换成你的域名）
+# 注意：使用自定义域名后 workers.dev 默认域名会被禁用
+# routes = [
+#   { pattern = "palette.example.com", custom_domain = true }
+# ]
+
+# KV 命名空间：执行 `wrangler kv namespace create KV` 后将 ID 填入
+# [[kv_namespaces]]
+# binding = "KV"
+# id = "your-kv-namespace-id-here"
+
+# 普通变量（非敏感的可写在这里；敏感的一律用 wrangler secret put）
+[vars]
+# AI_MODEL = "gpt-4o-mini"
+
+# ============================================================
+# 以下变量必须用 `wrangler secret put <NAME>` 设置（敏感！）
+# ============================================================
+# ADMIN_USERNAME  - 管理员用户名
+# ADMIN_PASSWORD  - 管理员密码
+# AI_API_URL      - OpenAI 兼容接口完整地址（如 https://api.xxx.com/v1/chat/completions）
+# AI_API_KEY      - 管理员 API 密钥
+# SESSION_SECRET  - 会话签名密钥（随机字符串）
+# ============================================================
